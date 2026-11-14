@@ -63,4 +63,50 @@ router.post("/start", verifyFirebaseToken, async (req, res) => {
   }
 });
 
+router.post("/end", verifyFirebaseToken, async (req, res) => {
+    const firebaseUid = (req as AuthenticatedRequest).firebaseUid;
+
+    if (!firebaseUid) {
+      res.status(401).json({
+        message: "User is not authenticated"
+      });
+      return;
+    }
+
+    try {
+      const result = await pool.query(
+        `UPDATE public.trips
+         SET status = 'completed',
+             ended_at = NOW()
+         WHERE driver_id = (
+           SELECT id
+           FROM public.users
+           WHERE firebase_uid = $1
+         )
+         AND status = 'active'
+         RETURNING id, driver_id, status, started_at, ended_at`,
+        [firebaseUid]
+      );
+
+      if (result.rows.length === 0) {
+        res.status(404).json({
+          message: "No active trip found"
+        });
+        return;
+      }
+
+      res.status(200).json({
+        message: "Trip ended successfully",
+        trip: result.rows[0]
+      });
+
+    } catch (error) {
+      console.error("End Trip error:", error);
+
+      res.status(500).json({
+        message: "Failed to end trip"
+      });
+    }
+  });
+
 export default router;
