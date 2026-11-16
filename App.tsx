@@ -81,16 +81,145 @@ useEffect(() => {
   const score = Math.round(trips.reduce((sum, t) => sum + t.score, 0) / Math.max(1, trips.length));
   const events = { speeding: trips.reduce((s,t)=>s+t.speeding,0), braking: trips.reduce((s,t)=>s+t.braking,0), acceleration: trips.reduce((s,t)=>s+t.acceleration,0) };
   const displayTime = `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
-  const beginTrip = () => { setSeconds(0); setStarted(true); setPage('active'); };
-  const endTrip = () => {
-    setStarted(false);
-    const date = new Date();
-    const trip: Trip = { id: Date.now(), date: date.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}), start: date.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}), end: date.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}), minutes: Math.floor(seconds/60), distance: 0, score: 90, speeding: 0, braking: 0, acceleration: 0 };
-    setTrips(previous => [trip, ...previous]); setChosen(trip); setPage('history'); setNotice('Demo trip saved for this session. No GPS data was recorded.');
+
+
+  const beginTrip = async () => {
+    const user = auth.currentUser;
+
+    if (!user) {
+      setNotice("Please log in before starting a trip.");
+      return;
+    }
+
+    try {
+      const token = await user.getIdToken();
+
+      const response = await fetch(
+        "http://localhost:3000/api/trips/start",
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json"
+          }
+        }
+      );
+
+      const data = await response.json();
+
+
+if (!response.ok) {
+  if (
+    response.status === 409 &&
+    data.message === "You already have an active trip"
+  ) {
+    setNotice("You have an existing active trip. Opening it now.");
+    setSeconds(0);
+    setStarted(true);
+    setPage("active");
+    return;
+  }
+
+  setNotice(data.message || "Unable to start trip.");
+  return;
+}
+
+
+      console.log("Trip created in PostgreSQL:", data.trip);
+
+      setSeconds(0);
+      setStarted(true);
+      setPage("active");
+
+    } catch (error) {
+      console.error("Start Trip error:", error);
+      setNotice("Unable to connect to the backend.");
+    }
   };
+
+
+
+const endTrip = async () => {
+  const user = auth.currentUser;
+
+  if (!user) {
+    setNotice("Please log in to end your trip.");
+    return;
+  }
+
+  try {
+    const token = await user.getIdToken();
+
+    const response = await fetch(
+      "http://localhost:3000/api/trips/end",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      setNotice(data.message || "Unable to end trip.");
+      return;
+    }
+
+    console.log("Trip completed in PostgreSQL:", data.trip);
+
+    setStarted(false);
+
+    const date = new Date(data.trip.started_at);
+    const endDate = new Date(data.trip.ended_at);
+
+    const trip: Trip = {
+      id: Number(data.trip.id),
+      date: date.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric"
+      }),
+      start: date.toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit"
+      }),
+      end: endDate.toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit"
+      }),
+      minutes: Math.floor(
+        (endDate.getTime() - date.getTime()) / 60000
+      ),
+      distance: 0,
+      score: 90,
+      speeding: 0,
+      braking: 0,
+      acceleration: 0
+    };
+
+
+setTrips(previous => [
+  trip,
+  ...previous.filter(existingTrip => existingTrip.id !== trip.id)
+]);
+
+    setChosen(trip);
+    setPage("history");
+    setNotice("Trip saved successfully. GPS tracking is not implemented yet.");
+
+  } catch (error) {
+    console.error("End Trip error:", error);
+    setNotice("Unable to connect to the backend.");
+  }
+};
+
   const openTrip = (trip: Trip) => { setChosen(trip); setPage('details'); };
-  
+
 const signIn = async () => {
+  console.log("DRIVEWISE LOGIN BUTTON PRESSED");
   if (!email.trim() || !password) {
     setNotice('Please enter your email and password.');
     return;
@@ -111,19 +240,22 @@ const signIn = async () => {
     setPassword('');
     setNotice('Login successful!');
     setPage('driver');
-  } catch (error: any) {
-    if (error.code === 'auth/invalid-credential') {
-      setNotice('Incorrect email or password.');
-    } else if (error.code === 'auth/too-many-requests') {
-      setNotice('Too many attempts. Please try again later.');
-    } else {
-      setNotice('Login failed. Please try again.');
-      console.error(error);
-    }
+
+} catch (error: any) {
+  if (error.code === 'auth/invalid-email') {
+    setNotice('Please enter a valid email address.');
+  } else if (error.code === 'auth/invalid-credential') {
+    setNotice('Incorrect email or password.');
+  } else if (error.code === 'auth/too-many-requests') {
+    setNotice('Too many attempts. Please try again later.');
+  } else {
+    setNotice('Login failed. Please try again.');
+    console.error(error);
   }
+}
 };
 
-  
+
 const register = async () => {
   if (!name.trim()) {
     setNotice('Please enter your full name.');
@@ -198,7 +330,7 @@ const logout = async () => {
       </View>
     );
   }
-  
+
   if (!isAuthenticated && !isAuth) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -233,7 +365,7 @@ const logout = async () => {
 </View>
 </Section>}
     </ScrollView>
-    {!isAuth && <TabBar page={page} navigate={p=>{setNotice('');setPage(p);}} parent={parent}/>} 
+    {!isAuth && <TabBar page={page} navigate={p=>{setNotice('');setPage(p);}} parent={parent}/>}
   </View></SafeAreaView>;
 }
 function TripRow({trip,open}:{trip:Trip;open:()=>void}) {return <Pressable onPress={open} style={styles.tripRow}><View style={{flex:1}}><Text style={styles.tripName}>{trip.date} · {trip.start}</Text><Text style={styles.muted}>{trip.minutes} min · {trip.distance.toFixed(1)} km</Text></View><Text style={styles.tripScore}>{trip.score}<Text style={styles.scoreSuffix}> /100</Text></Text><Text style={styles.chevron}>›</Text></Pressable>;}
