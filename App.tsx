@@ -19,11 +19,11 @@ import React, { useEffect, useState } from 'react';
 import { SafeAreaView, ScrollView, View, Text, TextInput, Pressable, StyleSheet, StatusBar, ActivityIndicator } from 'react-native';
 
 import DriverProfile from './components/DriverProfile';
-
+import AccountSettings from './components/AccountSettings';
 console.log('DriverProfile import:', typeof DriverProfile, DriverProfile);
 
 
-type Page = 'login' | 'register' | 'driver' | 'active' | 'history' | 'details' | 'analytics' | 'links' | 'parent' | 'profile';
+type Page = 'login' | 'register' | 'driver' | 'active' | 'history' | 'details' | 'analytics' | 'links' | 'parent' | 'profile' | 'settings';
 
 type Trip = { id: number; date: string; start: string; end: string; minutes: number; distance: number; score: number; speeding: number; braking: number; acceleration: number };
 
@@ -338,7 +338,7 @@ const logout = async () => {
     login:['Login','Access your driver or parent account'], register:['Driver Registration','Create your driver account'], driver:['Driver Dashboard','Alex Rivera · Driver account'], active:['Active Trip','Alex Rivera · Demo trip in progress'], history:['Trip History','Alex Rivera · Completed trips'], details:['Trip Details','Alex Rivera · Completed trip'], analytics:['Driving Analytics','Alex Rivera · Last 7 days'], links:['Account Linking',parent?'Parent account · Demo access':'Alex Rivera · You control parent access'], parent:['Parent Dashboard','Taylor Rivera · Parent account'],
 
 profile: ['Driver Profile', 'Manage your account information'],
-
+settings: ['Account Settings', 'Manage your account and get help'],
   };
 
   const isAuth = page === 'login' || page === 'register';
@@ -414,11 +414,18 @@ profile: ['Driver Profile', 'Manage your account information'],
 {page === 'profile' && (
   <DriverProfile
     onOpenSettings={() => {
-      setNotice('Account Settings screen is coming next.');
+      setNotice('');
+setPage('settings');
     }}
   />
 )}
-
+{page === 'settings' && (
+  <AccountSettings
+    onBack={() => setPage('profile')}
+    onEditProfile={() => setPage('profile')}
+    onLogout={logout}
+  />
+)}
       {page === 'active' && <Section><View style={styles.note}><Text style={styles.noteTitle}>●  Recording demo trip</Text></View><View style={styles.timerBlock}><Text style={styles.muted}>Trip duration</Text><Text style={styles.timer}>{displayTime}</Text><Text style={styles.muted}>Hours : Minutes : Seconds</Text></View><Box><Heading>Live trip information</Heading><View style={styles.spaceBetween}><Text style={styles.muted}>Distance traveled</Text><Text>Not tracked</Text></View><View style={styles.rule} /><View style={styles.spaceBetween}><Text style={styles.muted}>GPS & motion sensors</Text><Text>Demo only</Text></View></Box><Text style={[styles.centered,styles.muted]}>Keep your phone secured while driving. End your trip only when safely parked.</Text><Button text="End Trip" onPress={endTrip} /><Text style={[styles.centered,styles.muted]}>Your demo trip will appear in Trip History.</Text></Section>}
 
       {page === 'history' && <Section><Pressable style={styles.selectRow} onPress={()=>setRange(r=>r==='Last 7 days'?'All trips':'Last 7 days')}><Text>{range}</Text><Text>⌄</Text></Pressable><View style={styles.summary}><View><Text style={styles.summaryNumber}>{trips.length}</Text><Text style={styles.muted}>Completed trips</Text></View><View><Text style={styles.summaryNumber}>{totalKm.toFixed(1)} km</Text><Text style={styles.muted}>Total distance</Text></View></View><View style={[styles.spaceBetween,{marginBottom:12}]}><Heading>{range === 'Last 7 days'?'Oct 27 – Nov 2, 2026':'All demo trips'}</Heading><Text style={styles.muted}>Score</Text></View>{trips.map(t=><TripRow key={t.id} trip={t} open={()=>openTrip(t)} />)}<Text style={[styles.muted,{marginTop:20}]}>Select a trip to review its driving events.</Text></Section>}
