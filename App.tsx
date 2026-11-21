@@ -8,9 +8,9 @@ import {
 import { auth } from './firebaseConfig';
 import React, { useEffect, useState } from 'react';
 import { SafeAreaView, ScrollView, View, Text, TextInput, Pressable, StyleSheet, StatusBar, ActivityIndicator } from 'react-native';
+import DrivingRewards from './Components/DrivingRewards';
 
-
-type Page = 'login' | 'register' | 'driver' | 'active' | 'history' | 'details' | 'analytics' | 'links' | 'parent';
+type Page = 'login' | 'register' | 'driver' | 'active' | 'history' | 'details' | 'analytics' | 'links' | 'parent' | 'rewards';
 type Trip = { id: number; date: string; start: string; end: string; minutes: number; distance: number; score: number; speeding: number; braking: number; acceleration: number };
 const DEMO_TRIPS: Trip[] = [
   { id: 1, date: 'Nov 2, 2026', start: '8:15 AM', end: '8:43 AM', minutes: 28, distance: 18.4, score: 88, speeding: 1, braking: 0, acceleration: 1 },
@@ -368,6 +368,7 @@ const logout = async () => {
 };
 
   const headerData: Record<Page,[string,string]> = {
+    rewards: ['Driving Rewards', 'Explore rewards for safe driving'],
     login:['Login','Access your driver or parent account'], register:['Driver Registration','Create your driver account'], driver:['Driver Dashboard','Alex Rivera · Driver account'], active:['Active Trip','Alex Rivera · Demo trip in progress'], history:['Trip History','Alex Rivera · Completed trips'], details:['Trip Details','Alex Rivera · Completed trip'], analytics:['Driving Analytics','Alex Rivera · Last 7 days'], links:['Account Linking',parent?'Parent account · Demo access':'Alex Rivera · You control parent access'], parent:['Parent Dashboard','Taylor Rivera · Parent account']
   };
   const isAuth = page === 'login' || page === 'register';
@@ -450,6 +451,13 @@ const logout = async () => {
   Manage who can view your driving information in Links.
 </Text>
 
+<View style={{ marginTop: 16 }}>
+  <Button
+    text="View Driving Rewards"
+    onPress={() => setPage('rewards')}
+  />
+</View>
+
 <View style={{marginTop:20}}>
   <Button text="Logout" outline onPress={logout} />
 </View>
@@ -458,6 +466,18 @@ const logout = async () => {
       {page === 'history' && <Section><Pressable style={styles.selectRow} onPress={()=>setRange(r=>r==='Last 7 days'?'All trips':'Last 7 days')}><Text>{range}</Text><Text>⌄</Text></Pressable><View style={styles.summary}><View><Text style={styles.summaryNumber}>{trips.length}</Text><Text style={styles.muted}>Completed trips</Text></View><View><Text style={styles.summaryNumber}>{totalKm.toFixed(1)} km</Text><Text style={styles.muted}>Total distance</Text></View></View><View style={[styles.spaceBetween,{marginBottom:12}]}><Heading>{range === 'Last 7 days'?'Oct 27 – Nov 2, 2026':'All demo trips'}</Heading><Text style={styles.muted}>Score</Text></View>{trips.map(t=><TripRow key={t.id} trip={t} open={()=>openTrip(t)} />)}<Text style={[styles.muted,{marginTop:20}]}>Select a trip to review its driving events.</Text></Section>}
       {page === 'details' && <Section><Text onPress={()=>setPage('history')} style={styles.back}>‹ Back to Trip History</Text><Heading>{chosen.date}</Heading><View style={[styles.spaceBetween,{marginVertical:16}]}><View><Text style={styles.muted}>Start time</Text><Text style={styles.label}>{chosen.start}</Text></View><View><Text style={styles.muted}>End time</Text><Text style={styles.label}>{chosen.end}</Text></View></View><View style={[styles.summary,styles.spaceBetween]}><Text><Text style={styles.noteTitle}>{chosen.minutes} min</Text> duration</Text><Text><Text style={styles.noteTitle}>{chosen.distance.toFixed(1)} km</Text> distance</Text></View><Heading>Recorded route</Heading><View style={styles.mapPlaceholder}><Text style={styles.muted}>Map placeholder — no real GPS route</Text><Text style={{fontSize:28,marginTop:20}}>○ ────── ●</Text><Text style={styles.muted}>Start                       End</Text></View><Box><Heading>Trip driving score</Heading><Text style={styles.bigScore}>{chosen.score}<Text style={styles.scoreSuffix}> / 100</Text></Text><View style={styles.track}><View style={[styles.fill,{width:`${chosen.score}%` as `${number}%`}]} /></View></Box><View style={[styles.spaceBetween,{marginTop:24}]}><Heading>Driving events</Heading><Text style={styles.muted}>{chosen.speeding+chosen.braking+chosen.acceleration} total</Text></View><EventRow label="Speeding" count={chosen.speeding} /><EventRow label="Harsh braking" count={chosen.braking} /><EventRow label="Sudden acceleration" count={chosen.acceleration} /></Section>}
       {page === 'analytics' && <Section><Box><Heading>Driving score</Heading><Text style={styles.bigScore}>{score}<Text style={styles.scoreSuffix}> / 100</Text></Text><View style={styles.track}><View style={[styles.fill,{width:`${score}%` as `${number}%`}]} /></View><Text style={styles.muted}>{trips.length} trips · {totalKm.toFixed(1)} km · Demo data</Text></Box><View style={[styles.spaceBetween,{marginTop:25,marginBottom:8}]}><Heading>Driving events</Heading><Text style={styles.muted}>{events.speeding+events.braking+events.acceleration} total</Text></View><EventRow label="Speeding" sub="Above the road speed limit" count={events.speeding} /><EventRow label="Harsh braking" sub="Abrupt decreases in speed" count={events.braking} /><EventRow label="Sudden acceleration" sub="Rapid increases in speed" count={events.acceleration} /><View style={styles.note}><Text style={styles.noteTitle}>How your score is calculated</Text><Text style={styles.muted}>The full system will calculate scores from GPS and motion sensors. All values shown here are sample values.</Text></View></Section>}
+     {page === 'rewards' && (
+  <Section>
+    <Text
+      style={[styles.back, { marginBottom: 16 }]}
+      onPress={() => setPage('driver')}
+    >
+      ‹ Back to Dashboard
+    </Text>
+
+    <DrivingRewards drivingScore={monthlyScore} />
+  </Section>
+)}
       {page === 'links' && <Section><Box><Heading>Send linking request</Heading><Field title="Parent email" value={parentEmail} onChange={setParentEmail} placeholder="parent@example.com" /><Button text="Send Request" onPress={()=>setNotice(parentEmail.includes('@')?'Demo request recorded locally; no email was sent.':'Enter a valid parent email.')} /><Text style={[styles.muted,{marginTop:10}]}>Approved connections will share only permitted driving summaries.</Text></Box><View style={{height:16}} /><Box><View style={styles.spaceBetween}><Heading>Pending request ({pending ? 1 : 0})</Heading><Text style={styles.muted}>NO ACCESS</Text></View>{pending ? <><Text style={styles.label}>Morgan Lee · Parent</Text><Text style={styles.muted}>Wants to link · Awaiting approval</Text><Text style={[styles.muted,{marginVertical:12}]}>Approve to share score, trip summaries and event counts. Reject to share nothing.</Text><View style={styles.choiceRow}><View style={{flex:1}}><Button text="Approve" onPress={()=>{setPending(false);setApproved(true);setNotice('Demo connection approved locally.');}} /></View><View style={{flex:1}}><Button text="Reject" outline onPress={()=>{setPending(false);setNotice('Demo request rejected.');}} /></View></View></> : <Text style={styles.muted}>No pending requests.</Text>}</Box><View style={{height:16}} /><Box><Heading>Approved connection ({approved ? 1 : 0})</Heading>{approved ? <><Text style={styles.label}>Taylor Rivera · Parent</Text><Text style={[styles.muted,{marginVertical:10}]}>Shared: score, trip summaries and event counts. Not shared: live location or raw sensor data.</Text><Button text="Remove Connection" outline onPress={()=>{setApproved(false);setNotice('Demo connection removed locally.');}} /><Text style={[styles.muted,{marginTop:10}]}>Removing ends this simulated parent connection.</Text></> : <Text style={styles.muted}>No approved connections.</Text>}</Box></Section>}
       {page === 'parent' && <Section><View style={styles.spaceBetween}><Heading>Linked drivers (2)</Heading><Text style={styles.underlined} onPress={()=>setPage('links')}>Manage links</Text></View><Text style={[styles.muted,{marginVertical:14}]}>Authorized summaries · Last 7 days · Demo data</Text><Box><View style={styles.spaceBetween}><Heading>Alex Rivera</Heading><Text>Driver approved</Text></View><View style={styles.spaceBetween}><Text style={styles.bigScore}>{score}<Text style={styles.scoreSuffix}> / 100</Text></Text><Text style={styles.muted}>{trips.length} completed trips{'\n'}{totalKm.toFixed(1)} km</Text></View><Text>Latest: Nov 2 · 28 min · 18.4 km</Text><Text style={[styles.muted,{marginTop:8}]}>Speeding {events.speeding} · Braking {events.braking} · Acceleration {events.acceleration}</Text><View style={styles.rule}/><Text style={styles.muted}>Shared by Alex: score, trip summaries and event counts.</Text></Box><View style={{height:16}}/><Box><Heading>Sam Rivera</Heading><View style={styles.spaceBetween}><Text style={styles.bigScore}>91<Text style={styles.scoreSuffix}> / 100</Text></Text><Text style={styles.muted}>4 completed trips{'\n'}62.3 km</Text></View><View style={styles.rule}/><Text style={styles.muted}>Shared by Sam: score and weekly totals only. Trip details and events are not authorized.</Text></Box><View style={styles.note}><Text style={styles.noteTitle}>Driver-controlled access</Text><Text style={styles.muted}>Only approved information is shown. Live location and raw sensor data are not shared.</Text></View><View style={{marginTop:15}}>
   <Button text="Switch account" outline onPress={logout} />
