@@ -19,6 +19,15 @@ const DEMO_TRIPS: Trip[] = [
   { id: 4, date: 'Oct 30, 2026', start: '6:10 PM', end: '6:29 PM', minutes: 19, distance: 9.8, score: 84, speeding: 1, braking: 1, acceleration: 0 },
   { id: 5, date: 'Oct 29, 2026', start: '8:20 AM', end: '8:45 AM', minutes: 25, distance: 14.1, score: 86, speeding: 0, braking: 0, acceleration: 1 },
 ];
+
+const calculateAverage = (tripList: Trip[]): number | null => {
+  if (tripList.length === 0) return null;
+
+  const total = tripList.reduce((sum, trip) => sum + trip.score, 0);
+
+  return Math.round(total / tripList.length);
+};
+
 const C = { black: '#262626', gray: '#666666', line: '#BABABA', light: '#F2F2F2', white: '#FFFFFF' };
 function Button({ text, onPress, outline = false }: { text: string; onPress: () => void; outline?: boolean }) {
   return <Pressable onPress={onPress} style={[styles.button, outline && styles.outlineButton]}><Text style={[styles.buttonText, outline && styles.outlineButtonText]}>{text}</Text></Pressable>;
@@ -48,6 +57,47 @@ export default function App() {
   const [pending, setPending] = useState(true);
   const [approved, setApproved] = useState(true);
   const [trips, setTrips] = useState<Trip[]>(DEMO_TRIPS);
+  const [scoreCardWidth, setScoreCardWidth] = useState(300);
+  const today = new Date();
+
+// Start of the current week (Monday)
+const weekStart = new Date(
+  today.getFullYear(),
+  today.getMonth(),
+  today.getDate() - ((today.getDay() + 6) % 7)
+);
+
+// Start of the current month
+const monthStart = new Date(
+  today.getFullYear(),
+  today.getMonth(),
+  1
+);
+
+// Convert the trip's date into a Date object
+const completedTrips = trips
+  .map(trip => ({
+    ...trip,
+    tripDate: new Date(trip.date),
+  }))
+  .filter(trip => !isNaN(trip.tripDate.getTime()))
+  .sort((a, b) => b.tripDate.getTime() - a.tripDate.getTime());
+
+const recentScore = completedTrips.length > 0
+  ? completedTrips[0].score
+  : null;
+
+const weeklyScore = calculateAverage(
+  completedTrips.filter(
+    trip => trip.tripDate >= weekStart && trip.tripDate <= today
+  )
+);
+
+const monthlyScore = calculateAverage(
+  completedTrips.filter(
+    trip => trip.tripDate >= monthStart && trip.tripDate <= today
+  )
+);
   const [chosen, setChosen] = useState<Trip>(DEMO_TRIPS[0]);
   const [seconds, setSeconds] = useState(0);
   const [started, setStarted] = useState(false);
@@ -347,7 +397,56 @@ const logout = async () => {
         <View style={{ marginBottom: 16 }}><Text style={styles.label}>Demo account type</Text><View style={styles.choiceRow}><Pressable onPress={() => setParent(false)} style={[styles.choice, !parent && styles.choiceActive]}><Text>Driver</Text></Pressable><Pressable onPress={() => setParent(true)} style={[styles.choice, parent && styles.choiceActive]}><Text>Parent</Text></Pressable></View></View>
         <Button text="Login" onPress={signIn} /><Pressable onPress={() => { setNotice(''); setPage('register'); }}><Text style={styles.centered}>New driver?  <Text style={styles.underlined}>Create an account</Text></Text></Pressable><View style={styles.note}><Text style={styles.noteTitle}>For parents</Text><Text style={styles.muted}>A driver’s approval will be required to access driving information in the planned full system.</Text></View></Section>}
       {page === 'register' && <Section><Heading>Understand your driving.</Heading><Text style={styles.description}>Record trips with your smartphone and review your driving habits.</Text><Field title="Name" value={name} onChange={setName} placeholder="Full name" /><Field title="Email" value={email} onChange={setEmail} placeholder="you@example.com" /><Field title="Password" value={password} onChange={setPassword} placeholder="Create a password" secure /><Text style={[styles.muted,{marginTop:-10,marginBottom:20}]}>Use at least 8 characters.</Text><Button text="Sign Up" onPress={register} /><Pressable onPress={() => { setNotice(''); setPage('login'); }}><Text style={styles.centered}>Already have an account?  <Text style={styles.underlined}>Login</Text></Text></Pressable><View style={styles.note}><Text style={styles.noteTitle}>Your driving information stays yours.</Text><Text style={styles.muted}>Parents can view authorized information only after you approve an account link in the planned system.</Text></View></Section>}
-      {page === 'driver' && <Section><Box><Heading>Your driving score</Heading><View style={styles.spaceBetween}><Text style={styles.bigScore}>{score}<Text style={styles.scoreSuffix}> / 100</Text></Text><Text style={styles.muted}>Last 7 days</Text></View><Text style={styles.muted}>{trips.length} completed trips · {totalKm.toFixed(1)} km</Text></Box><View style={{height:20}} /><Button text="Start Trip" onPress={beginTrip} /><Text style={[styles.muted,{marginTop:10}]}>Demo trip timer only. GPS and motion sensors are not recording yet.</Text><View style={[styles.spaceBetween,{marginTop:27,marginBottom:13}]}><Heading>Recent trips</Heading><Text style={styles.underlined} onPress={()=>setPage('history')}>View all</Text></View>{trips.slice(0,3).map(t=><TripRow key={t.id} trip={t} open={()=>openTrip(t)} />)}<Text style={[styles.muted,{marginTop:22}]}>
+      {page === 'driver' && <Section>
+  <Heading>Your driving scores</Heading>
+
+  <View
+  onLayout={(event) => {
+    setScoreCardWidth(event.nativeEvent.layout.width);
+  }}
+>
+  <ScrollView
+    horizontal
+    pagingEnabled
+    showsHorizontalScrollIndicator={false}
+    style={{ marginTop: 12 }}
+  >
+    {[
+      { title: 'Recent Trip', value: recentScore, period: 'Latest completed trip' },
+{ title: 'Weekly Average', value: weeklyScore, period: 'Current week' },
+{ title: 'Monthly Average', value: monthlyScore, period: 'Current month' },
+    ].map((item, index) => (
+      <View
+        key={index}
+        style={{
+          width: scoreCardWidth,
+          padding: 20,
+          marginRight: 0,
+          borderWidth: 1,
+          borderColor: '#CCCCCC',
+          borderRadius: 12,
+          backgroundColor: '#FFFFFF',
+        }}
+      >
+        <Heading>{item.title}</Heading>
+
+        {item.value !== null ? (
+  <Text style={styles.bigScore}>
+    {item.value}
+    <Text style={styles.scoreSuffix}> / 100</Text>
+  </Text>
+) : (
+  <Text style={styles.muted}>
+    No completed trips for this period
+  </Text>
+)}
+
+        <Text style={styles.muted}>{item.period}</Text>
+      </View>
+    ))}
+  </ScrollView>
+  </View>
+  <View style={{height:20}} /><Button text="Start Trip" onPress={beginTrip} /><Text style={[styles.muted,{marginTop:10}]}>Demo trip timer only. GPS and motion sensors are not recording yet.</Text><View style={[styles.spaceBetween,{marginTop:27,marginBottom:13}]}><Heading>Recent trips</Heading><Text style={styles.underlined} onPress={()=>setPage('history')}>View all</Text></View>{trips.slice(0,3).map(t=><TripRow key={t.id} trip={t} open={()=>openTrip(t)} />)}<Text style={[styles.muted,{marginTop:22}]}>
   Manage who can view your driving information in Links.
 </Text>
 
