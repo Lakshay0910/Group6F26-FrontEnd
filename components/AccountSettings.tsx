@@ -223,6 +223,105 @@ setPasswordSuccess('Your password has been updated successfully!');
   </View>
 )}
 
+{activeSection === 'faq' && (
+  <View
+    style={{
+      marginTop: 24,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: '#DDDDDD',
+      borderRadius: 8,
+    }}
+  >
+    <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 16 }}>
+      Frequently Asked Questions
+    </Text>
+
+    <Text style={{ fontWeight: 'bold', marginBottom: 6 }}>
+      1. How can I edit my driver profile?
+    </Text>
+    <Text style={{ marginBottom: 16 }}>
+      Open Account Settings and select Edit Profile to update your display name.
+    </Text>
+
+    <Text style={{ fontWeight: 'bold', marginBottom: 6 }}>
+      2. How do I change my password?
+    </Text>
+    <Text style={{ marginBottom: 16 }}>
+      Select Change Password, enter your current password, and choose a new password.
+    </Text>
+
+    <Text style={{ fontWeight: 'bold', marginBottom: 6 }}>
+      3. Where can I view my trips?
+    </Text>
+    <Text style={{ marginBottom: 16 }}>
+      Open the Trips tab to access your trip information.
+    </Text>
+
+    <Text style={{ fontWeight: 'bold', marginBottom: 6 }}>
+      4. How do I log out?
+    </Text>
+    <Text style={{ marginBottom: 16 }}>
+      Select Logout from Account Settings to sign out of your account.
+    </Text>
+
+    <Pressable
+      onPress={() => setActiveSection('none')}
+      style={{
+        backgroundColor: '#333333',
+        padding: 14,
+        alignItems: 'center',
+        borderRadius: 6,
+      }}
+    >
+      <Text style={{ color: '#FFFFFF', fontWeight: 'bold' }}>
+        Close FAQs
+      </Text>
+    </Pressable>
+  </View>
+)}
+
+{activeSection === 'support' && (
+  <View style={{
+    marginTop: 24,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#DDDDDD',
+    borderRadius: 8,
+  }}>
+    <Text style={{
+      fontSize: 20,
+      fontWeight: 'bold',
+      marginBottom: 12,
+    }}>
+      Contact Support
+    </Text>
+
+    <Text style={{ marginBottom: 12 }}>
+      Need help with your DriveWise account?
+    </Text>
+
+    <Text style={{ marginBottom: 16 }}>
+      Please contact your DriveWise support team through your
+      organization's official support channel.
+    </Text>
+
+    <Pressable
+      onPress={() => setActiveSection('none')}
+      style={{
+        backgroundColor: '#333333',
+        padding: 14,
+        alignItems: 'center',
+        borderRadius: 6,
+      }}
+    >
+      <Text style={{ color: '#FFFFFF', fontWeight: 'bold' }}>
+        Close Support
+      </Text>
+    </Pressable>
+  </View>
+)}
+
     </ScrollView>
   );
 }
