@@ -44,3 +44,6 @@ yarn-error.*
 .env
 .env.*
 !.env.example
+
+# Firebase Admin private credentials
+backend/secrets/
