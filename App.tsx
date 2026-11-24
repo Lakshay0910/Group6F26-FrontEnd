@@ -6,11 +6,17 @@ import {
   onAuthStateChanged
 } from 'firebase/auth';
 import { auth } from './firebaseConfig';
+
+import DriverProfile from './components/DriverProfile';
+import AccountSettings from './components/AccountSettings';
+
 import React, { useEffect, useState } from 'react';
 import { SafeAreaView, ScrollView, View, Text, TextInput, Pressable, StyleSheet, StatusBar, ActivityIndicator } from 'react-native';
 
 
-type Page = 'login' | 'register' | 'driver' | 'active' | 'history' | 'details' | 'analytics' | 'links' | 'parent';
+
+type Page = 'login' | 'register' | 'driver' | 'active' | 'history' | 'details' | 'analytics' | 'links' | 'parent' | 'profile' | 'settings';
+
 type Trip = { id: number; date: string; start: string; end: string; minutes: number; distance: number; score: number; speeding: number; braking: number; acceleration: number };
 const DEMO_TRIPS: Trip[] = [
   { id: 1, date: 'Nov 2, 2026', start: '8:15 AM', end: '8:43 AM', minutes: 28, distance: 18.4, score: 88, speeding: 1, braking: 0, acceleration: 1 },
@@ -318,7 +324,10 @@ const logout = async () => {
 };
 
   const headerData: Record<Page,[string,string]> = {
-    login:['Login','Access your driver or parent account'], register:['Driver Registration','Create your driver account'], driver:['Driver Dashboard','Alex Rivera · Driver account'], active:['Active Trip','Alex Rivera · Demo trip in progress'], history:['Trip History','Alex Rivera · Completed trips'], details:['Trip Details','Alex Rivera · Completed trip'], analytics:['Driving Analytics','Alex Rivera · Last 7 days'], links:['Account Linking',parent?'Parent account · Demo access':'Alex Rivera · You control parent access'], parent:['Parent Dashboard','Taylor Rivera · Parent account']
+    login:['Login','Access your driver or parent account'], register:['Driver Registration','Create your driver account'], driver:['Driver Dashboard','Alex Rivera · Driver account'], active:['Active Trip','Alex Rivera · Demo trip in progress'], history:['Trip History','Alex Rivera · Completed trips'], details:['Trip Details','Alex Rivera · Completed trip'], analytics:['Driving Analytics','Alex Rivera · Last 7 days'], links:['Account Linking',parent?'Parent account · Demo access':'Alex Rivera · You control parent access'], parent:['Parent Dashboard','Taylor Rivera · Parent account'],
+profile: ['Driver Profile', 'Manage your account information'],
+settings: ['Account Settings', 'Manage your account and get help'],
+
   };
   const isAuth = page === 'login' || page === 'register';
   const [title, subtitle] = headerData[page];
@@ -351,10 +360,34 @@ const logout = async () => {
   Manage who can view your driving information in Links.
 </Text>
 
-<View style={{marginTop:20}}>
+
+<View style={{ marginTop: 20 }}>
+  <View style={{ marginBottom: 12 }}>
+    <Button text="My Profile" onPress={() => setPage('profile')} />
+  </View>
+
   <Button text="Logout" outline onPress={logout} />
 </View>
+
 </Section>}
+
+{page === 'profile' && (
+  <DriverProfile
+    onOpenSettings={() => {
+      setNotice('');
+      setPage('settings');
+    }}
+  />
+)}
+
+{page === 'settings' && (
+  <AccountSettings
+    onBack={() => setPage('profile')}
+    onEditProfile={() => setPage('profile')}
+    onLogout={logout}
+  />
+)}
+
       {page === 'active' && <Section><View style={styles.note}><Text style={styles.noteTitle}>●  Recording demo trip</Text></View><View style={styles.timerBlock}><Text style={styles.muted}>Trip duration</Text><Text style={styles.timer}>{displayTime}</Text><Text style={styles.muted}>Hours : Minutes : Seconds</Text></View><Box><Heading>Live trip information</Heading><View style={styles.spaceBetween}><Text style={styles.muted}>Distance traveled</Text><Text>Not tracked</Text></View><View style={styles.rule} /><View style={styles.spaceBetween}><Text style={styles.muted}>GPS & motion sensors</Text><Text>Demo only</Text></View></Box><Text style={[styles.centered,styles.muted]}>Keep your phone secured while driving. End your trip only when safely parked.</Text><Button text="End Trip" onPress={endTrip} /><Text style={[styles.centered,styles.muted]}>Your demo trip will appear in Trip History.</Text></Section>}
       {page === 'history' && <Section><Pressable style={styles.selectRow} onPress={()=>setRange(r=>r==='Last 7 days'?'All trips':'Last 7 days')}><Text>{range}</Text><Text>⌄</Text></Pressable><View style={styles.summary}><View><Text style={styles.summaryNumber}>{trips.length}</Text><Text style={styles.muted}>Completed trips</Text></View><View><Text style={styles.summaryNumber}>{totalKm.toFixed(1)} km</Text><Text style={styles.muted}>Total distance</Text></View></View><View style={[styles.spaceBetween,{marginBottom:12}]}><Heading>{range === 'Last 7 days'?'Oct 27 – Nov 2, 2026':'All demo trips'}</Heading><Text style={styles.muted}>Score</Text></View>{trips.map(t=><TripRow key={t.id} trip={t} open={()=>openTrip(t)} />)}<Text style={[styles.muted,{marginTop:20}]}>Select a trip to review its driving events.</Text></Section>}
       {page === 'details' && <Section><Text onPress={()=>setPage('history')} style={styles.back}>‹ Back to Trip History</Text><Heading>{chosen.date}</Heading><View style={[styles.spaceBetween,{marginVertical:16}]}><View><Text style={styles.muted}>Start time</Text><Text style={styles.label}>{chosen.start}</Text></View><View><Text style={styles.muted}>End time</Text><Text style={styles.label}>{chosen.end}</Text></View></View><View style={[styles.summary,styles.spaceBetween]}><Text><Text style={styles.noteTitle}>{chosen.minutes} min</Text> duration</Text><Text><Text style={styles.noteTitle}>{chosen.distance.toFixed(1)} km</Text> distance</Text></View><Heading>Recorded route</Heading><View style={styles.mapPlaceholder}><Text style={styles.muted}>Map placeholder — no real GPS route</Text><Text style={{fontSize:28,marginTop:20}}>○ ────── ●</Text><Text style={styles.muted}>Start                       End</Text></View><Box><Heading>Trip driving score</Heading><Text style={styles.bigScore}>{chosen.score}<Text style={styles.scoreSuffix}> / 100</Text></Text><View style={styles.track}><View style={[styles.fill,{width:`${chosen.score}%` as `${number}%`}]} /></View></Box><View style={[styles.spaceBetween,{marginTop:24}]}><Heading>Driving events</Heading><Text style={styles.muted}>{chosen.speeding+chosen.braking+chosen.acceleration} total</Text></View><EventRow label="Speeding" count={chosen.speeding} /><EventRow label="Harsh braking" count={chosen.braking} /><EventRow label="Sudden acceleration" count={chosen.acceleration} /></Section>}
