@@ -81,7 +81,18 @@ const completedTrips = trips
     tripDate: new Date(trip.date),
   }))
   .filter(trip => !isNaN(trip.tripDate.getTime()))
-  .sort((a, b) => b.tripDate.getTime() - a.tripDate.getTime());
+ 
+.sort((a, b) => {
+  const dateA = new Date(`${a.date} ${a.start}`).getTime();
+  const dateB = new Date(`${b.date} ${b.start}`).getTime();
+
+  return dateB - dateA;
+});
+
+
+
+
+
 
 const recentScore = completedTrips.length > 0
   ? completedTrips[0].score
@@ -102,6 +113,19 @@ const monthlyScore = calculateAverage(
   const [seconds, setSeconds] = useState(0);
   const [started, setStarted] = useState(false);
   const [range, setRange] = useState<'Last 7 days' | 'All trips'>('Last 7 days');
+
+  const sevenDaysAgo = new Date();
+sevenDaysAgo.setHours(0, 0, 0, 0);
+sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+
+const filteredTrips = range === 'Last 7 days'
+  ? completedTrips.filter(trip => trip.tripDate >= sevenDaysAgo)
+  : completedTrips;
+
+  const filteredDistance = filteredTrips.reduce(
+  (total, trip) => total + trip.distance,
+  0
+);
 
   //firebase authentication check
 useEffect(() => {
@@ -463,7 +487,26 @@ const logout = async () => {
 </View>
 </Section>}
       {page === 'active' && <Section><View style={styles.note}><Text style={styles.noteTitle}>●  Recording demo trip</Text></View><View style={styles.timerBlock}><Text style={styles.muted}>Trip duration</Text><Text style={styles.timer}>{displayTime}</Text><Text style={styles.muted}>Hours : Minutes : Seconds</Text></View><Box><Heading>Live trip information</Heading><View style={styles.spaceBetween}><Text style={styles.muted}>Distance traveled</Text><Text>Not tracked</Text></View><View style={styles.rule} /><View style={styles.spaceBetween}><Text style={styles.muted}>GPS & motion sensors</Text><Text>Demo only</Text></View></Box><Text style={[styles.centered,styles.muted]}>Keep your phone secured while driving. End your trip only when safely parked.</Text><Button text="End Trip" onPress={endTrip} /><Text style={[styles.centered,styles.muted]}>Your demo trip will appear in Trip History.</Text></Section>}
-      {page === 'history' && <Section><Pressable style={styles.selectRow} onPress={()=>setRange(r=>r==='Last 7 days'?'All trips':'Last 7 days')}><Text>{range}</Text><Text>⌄</Text></Pressable><View style={styles.summary}><View><Text style={styles.summaryNumber}>{trips.length}</Text><Text style={styles.muted}>Completed trips</Text></View><View><Text style={styles.summaryNumber}>{totalKm.toFixed(1)} km</Text><Text style={styles.muted}>Total distance</Text></View></View><View style={[styles.spaceBetween,{marginBottom:12}]}><Heading>{range === 'Last 7 days'?'Oct 27 – Nov 2, 2026':'All demo trips'}</Heading><Text style={styles.muted}>Score</Text></View>{trips.map(t=><TripRow key={t.id} trip={t} open={()=>openTrip(t)} />)}<Text style={[styles.muted,{marginTop:20}]}>Select a trip to review its driving events.</Text></Section>}
+      {page === 'history' && <Section><Pressable style={styles.selectRow} onPress={()=>setRange(r=>r==='Last 7 days'?'All trips':'Last 7 days')}><Text>{range}</Text><Text>⌄</Text></Pressable><View style={styles.summary}><View><Text style={styles.summaryNumber}>{filteredTrips.length}</Text><Text style={styles.muted}>Completed trips</Text></View><View><Text style={styles.summaryNumber}>{filteredDistance.toFixed(1)} km</Text><Text style={styles.muted}>Total distance</Text></View></View><View style={[styles.spaceBetween,{marginBottom:12}]}><Heading>{range === 'Last 7 days' ? 'Last 7 days' : 'All trips'}</Heading><Text style={styles.muted}>Score</Text></View>
+
+{filteredTrips.length === 0 ? (
+  <Text style={[styles.muted, { marginTop: 20, textAlign: 'center' }]}>
+    {range === 'Last 7 days'
+      ? 'No completed trips in the last 7 days.'
+      : 'No trip history available. Your completed trips will appear here.'}
+  </Text>
+) : (
+  filteredTrips.map(t => (
+    <TripRow
+      key={t.id}
+      trip={t}
+      open={() => openTrip(t)}
+    />
+  ))
+)}
+
+
+<Text style={[styles.muted,{marginTop:20}]}>Select a trip to review its driving events.</Text></Section>}
       {page === 'details' && <Section><Text onPress={()=>setPage('history')} style={styles.back}>‹ Back to Trip History</Text><Heading>{chosen.date}</Heading><View style={[styles.spaceBetween,{marginVertical:16}]}><View><Text style={styles.muted}>Start time</Text><Text style={styles.label}>{chosen.start}</Text></View><View><Text style={styles.muted}>End time</Text><Text style={styles.label}>{chosen.end}</Text></View></View><View style={[styles.summary,styles.spaceBetween]}><Text><Text style={styles.noteTitle}>{chosen.minutes} min</Text> duration</Text><Text><Text style={styles.noteTitle}>{chosen.distance.toFixed(1)} km</Text> distance</Text></View><Heading>Recorded route</Heading><View style={styles.mapPlaceholder}><Text style={styles.muted}>Map placeholder — no real GPS route</Text><Text style={{fontSize:28,marginTop:20}}>○ ────── ●</Text><Text style={styles.muted}>Start                       End</Text></View><Box><Heading>Trip driving score</Heading><Text style={styles.bigScore}>{chosen.score}<Text style={styles.scoreSuffix}> / 100</Text></Text><View style={styles.track}><View style={[styles.fill,{width:`${chosen.score}%` as `${number}%`}]} /></View></Box><View style={[styles.spaceBetween,{marginTop:24}]}><Heading>Driving events</Heading><Text style={styles.muted}>{chosen.speeding+chosen.braking+chosen.acceleration} total</Text></View><EventRow label="Speeding" count={chosen.speeding} /><EventRow label="Harsh braking" count={chosen.braking} /><EventRow label="Sudden acceleration" count={chosen.acceleration} /></Section>}
       {page === 'analytics' && <Section><Box><Heading>Driving score</Heading><Text style={styles.bigScore}>{score}<Text style={styles.scoreSuffix}> / 100</Text></Text><View style={styles.track}><View style={[styles.fill,{width:`${score}%` as `${number}%`}]} /></View><Text style={styles.muted}>{trips.length} trips · {totalKm.toFixed(1)} km · Demo data</Text></Box><View style={[styles.spaceBetween,{marginTop:25,marginBottom:8}]}><Heading>Driving events</Heading><Text style={styles.muted}>{events.speeding+events.braking+events.acceleration} total</Text></View><EventRow label="Speeding" sub="Above the road speed limit" count={events.speeding} /><EventRow label="Harsh braking" sub="Abrupt decreases in speed" count={events.braking} /><EventRow label="Sudden acceleration" sub="Rapid increases in speed" count={events.acceleration} /><View style={styles.note}><Text style={styles.noteTitle}>How your score is calculated</Text><Text style={styles.muted}>The full system will calculate scores from GPS and motion sensors. All values shown here are sample values.</Text></View></Section>}
      {page === 'rewards' && (
