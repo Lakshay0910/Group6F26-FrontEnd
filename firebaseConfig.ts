@@ -1,9 +1,8 @@
 import { initializeApp } from 'firebase/app';
-
-
-import { getAuth } from 'firebase/auth';
+import { initializeAuth } from 'firebase/auth';
+// @ts-expect-error React Native export is missing from Firebase's TypeScript declarations
+import { getReactNativePersistence } from 'firebase/auth';
 import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyASARhsCisO8S59X9v9XheCQDb4Aoto2D8',
@@ -16,7 +15,6 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-
-
-export const auth = getAuth(app);
-
+export const auth = initializeAuth(app, {
+  persistence: getReactNativePersistence(ReactNativeAsyncStorage)
+});
