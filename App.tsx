@@ -22,9 +22,17 @@ import {
 
 import type { GPSStats } from './services/locationService';
 import { SafeAreaView, ScrollView, View, Text, TextInput, Pressable, StyleSheet, StatusBar, ActivityIndicator } from 'react-native';
+import {
+  createMotionStats,
+  requestMotionPermission,
+  startMotionTracking,
+  stopMotionTracking,
+} from './services/motionService';
 
-
-
+import type {
+  MotionStats,
+  MotionSubscription,
+} from './services/motionService';
 
 type Page = 'login' | 'register' | 'driver' | 'active' | 'history' | 'details' | 'analytics' | 'links' | 'parent' | 'profile' | 'settings';
 
@@ -83,6 +91,24 @@ const gpsSubscription = useRef<LocationSubscription | null>(null);
 const tripRequestPending = useRef(false);
   const [range, setRange] = useState<'Last 7 days' | 'All trips'>('Last 7 days');
 
+// Stores motion statistics for the live trip screen.
+const [motionStats, setMotionStats] = useState<MotionStats>(
+  createMotionStats()
+);
+
+// Stores the latest motion statistics.
+const motionStatsRef = useRef<MotionStats>(
+  createMotionStats()
+);
+
+// Stores the active motion sensor subscription.
+const motionSubscription = useRef<MotionSubscription | null>(
+  null
+);
+
+// Indicates whether motion sensors are available and enabled.
+const [motionEnabled, setMotionEnabled] = useState(false);
+
   //firebase authentication check
 useEffect(() => {
   const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -139,11 +165,58 @@ const deactivateGPS = () => {
   gpsSubscription.current = null;
 };
 
-// Clean up the GPS subscription when the app component unmounts.
+// Initialize motion sensors for a new trip.
+const activateMotion = async () => {
+  stopMotionTracking(motionSubscription.current);
+  motionSubscription.current = null;
+
+  // Reset motion statistics.
+  const initialStats = createMotionStats();
+
+  motionStatsRef.current = initialStats;
+  setMotionStats(initialStats);
+  setMotionEnabled(false);
+
+  try {
+    const permissionGranted =
+      await requestMotionPermission();
+
+    // Allow GPS tracking even if motion sensors are unavailable.
+    if (!permissionGranted) {
+      console.log("Motion sensors unavailable or permission denied.");
+      return;
+    }
+
+    // Start listening for motion sensor readings.
+    motionSubscription.current = startMotionTracking(
+      (updatedStats) => {
+        motionStatsRef.current = updatedStats;
+        setMotionStats(updatedStats);
+      }
+    );
+
+    setMotionEnabled(true);
+
+  } catch (error) {
+    console.warn("Unable to activate motion sensors:", error);
+  }
+};
+
+// Stop motion sensor tracking.
+const deactivateMotion = () => {
+  stopMotionTracking(motionSubscription.current);
+  motionSubscription.current = null;
+  setMotionEnabled(false);
+};
+
+// Release GPS and motion sensors when the component unmounts.
 useEffect(() => {
   return () => {
     stopGPSTracking(gpsSubscription.current);
     gpsSubscription.current = null;
+
+    stopMotionTracking(motionSubscription.current);
+    motionSubscription.current = null;
   };
 }, []);
 
@@ -176,6 +249,7 @@ const beginTrip = async () => {
 
     // Initialize GPS before creating the database record.
     await activateGPS();
+    await activateMotion();
 
     // Obtain the Firebase authentication token.
     const token = await user.getIdToken();
@@ -195,6 +269,7 @@ const beginTrip = async () => {
 
     if (!response.ok) {
       deactivateGPS();
+      deactivateMotion();
 
       if (response.status === 409) {
         setNotice(
@@ -217,6 +292,7 @@ const beginTrip = async () => {
 
   } catch (error) {
     deactivateGPS();
+    deactivateMotion();
     console.error("Start Trip error:", error);
     setNotice("Unable to start GPS tracking or connect to the backend.");
 
@@ -263,6 +339,12 @@ const endTrip = async () => {
 
     // Stop GPS tracking after successful completion.
     deactivateGPS();
+    deactivateMotion();
+
+// Retrieve the final motion sensor statistics.
+const finalMotionStats = motionStatsRef.current;
+
+console.log("Completed trip motion summary:", finalMotionStats);
 
     // Retrieve the latest recorded GPS statistics.
     const finalStats = gpsStatsRef.current;
@@ -566,9 +648,40 @@ settings: ['Account Settings', 'Manage your account and get help'],
       <View style={styles.rule} />
 
       <View style={styles.spaceBetween}>
-        <Text style={styles.muted}>Motion sensors</Text>
-        <Text>Not enabled yet</Text>
-      </View>
+  <Text style={styles.muted}>Motion sensors</Text>
+  <Text>
+    {motionEnabled
+      ? motionStats.samples > 0
+        ? "Connected"
+        : "Waiting for readings..."
+      : "Unavailable"}
+  </Text>
+</View>
+
+<View style={styles.rule} />
+
+<View style={styles.spaceBetween}>
+  <Text style={styles.muted}>Acceleration</Text>
+  <Text>
+    {motionStats.currentAcceleration.toFixed(2)} m/s²
+  </Text>
+</View>
+
+<View style={styles.rule} />
+
+<View style={styles.spaceBetween}>
+  <Text style={styles.muted}>Peak acceleration</Text>
+  <Text>
+    {motionStats.maxAcceleration.toFixed(2)} m/s²
+  </Text>
+</View>
+
+<View style={styles.rule} />
+
+<View style={styles.spaceBetween}>
+  <Text style={styles.muted}>Sudden movements</Text>
+  <Text>{motionStats.suddenMovements}</Text>
+</View>
     </Box>
 
     <Text style={[styles.centered, styles.muted]}>
