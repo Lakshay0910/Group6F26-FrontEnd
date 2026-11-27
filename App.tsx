@@ -10,8 +10,19 @@ import { auth } from './firebaseConfig';
 import DriverProfile from './components/DriverProfile';
 import AccountSettings from './components/AccountSettings';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
+import type { LocationSubscription } from 'expo-location';
+
+import {
+  requestLocationPermission,
+  createGPSStats,
+  startGPSTracking,
+  stopGPSTracking,
+} from './services/locationService';
+
+import type { GPSStats } from './services/locationService';
 import { SafeAreaView, ScrollView, View, Text, TextInput, Pressable, StyleSheet, StatusBar, ActivityIndicator } from 'react-native';
+
 
 
 
@@ -57,6 +68,19 @@ export default function App() {
   const [chosen, setChosen] = useState<Trip>(DEMO_TRIPS[0]);
   const [seconds, setSeconds] = useState(0);
   const [started, setStarted] = useState(false);
+  // Stores GPS statistics for displaying live trip information.
+const [gpsStats, setGpsStats] = useState<GPSStats>(
+  createGPSStats()
+);
+
+// Stores the latest GPS statistics without waiting for a re-render.
+const gpsStatsRef = useRef<GPSStats>(createGPSStats());
+
+// Stores the active GPS subscription so we can stop it later.
+const gpsSubscription = useRef<LocationSubscription | null>(null);
+
+// Prevents multiple simultaneous Start Trip or End Trip requests.
+const tripRequestPending = useRef(false);
   const [range, setRange] = useState<'Last 7 days' | 'All trips'>('Last 7 days');
 
   //firebase authentication check
@@ -88,62 +112,118 @@ useEffect(() => {
   const events = { speeding: trips.reduce((s,t)=>s+t.speeding,0), braking: trips.reduce((s,t)=>s+t.braking,0), acceleration: trips.reduce((s,t)=>s+t.acceleration,0) };
   const displayTime = `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 
+  // Start collecting GPS data for a new trip.
+const activateGPS = async () => {
+  // Remove any previous subscription.
+  stopGPSTracking(gpsSubscription.current);
+  gpsSubscription.current = null;
 
-  const beginTrip = async () => {
-    const user = auth.currentUser;
+  // Reset statistics for the new trip.
+  const initialStats = createGPSStats();
 
-    if (!user) {
-      setNotice("Please log in before starting a trip.");
-      return;
+  gpsStatsRef.current = initialStats;
+  setGpsStats(initialStats);
+
+  // Listen for incoming GPS readings.
+  gpsSubscription.current = await startGPSTracking(
+    (updatedStats) => {
+      gpsStatsRef.current = updatedStats;
+      setGpsStats(updatedStats);
     }
+  );
+};
 
-    try {
-      const token = await user.getIdToken();
+// Stop collecting GPS data.
+const deactivateGPS = () => {
+  stopGPSTracking(gpsSubscription.current);
+  gpsSubscription.current = null;
+};
 
-      const response = await fetch(
-        "http://localhost:3000/api/trips/start",
-        {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${token}`,
-            "Content-Type": "application/json"
-          }
-        }
-      );
+// Clean up the GPS subscription when the app component unmounts.
+useEffect(() => {
+  return () => {
+    stopGPSTracking(gpsSubscription.current);
+    gpsSubscription.current = null;
+  };
+}, []);
 
-      const data = await response.json();
+const beginTrip = async () => {
+  const user = auth.currentUser;
 
-
-if (!response.ok) {
-  if (
-    response.status === 409 &&
-    data.message === "You already have an active trip"
-  ) {
-    setNotice("You have an existing active trip. Opening it now.");
-    setSeconds(0);
-    setStarted(true);
-    setPage("active");
+  // Make sure the driver is authenticated.
+  if (!user) {
+    setNotice("Please log in before starting a trip.");
     return;
   }
 
-  setNotice(data.message || "Unable to start trip.");
-  return;
-}
+  // Prevent duplicate Start Trip requests.
+  if (tripRequestPending.current || started) {
+    return;
+  }
 
+  tripRequestPending.current = true;
+  setNotice("");
 
-      console.log("Trip created in PostgreSQL:", data.trip);
+  try {
+    // Request GPS permission before creating a trip.
+    const permissionGranted =
+      await requestLocationPermission();
 
-      setSeconds(0);
-      setStarted(true);
-      setPage("active");
-
-    } catch (error) {
-      console.error("Start Trip error:", error);
-      setNotice("Unable to connect to the backend.");
+    if (!permissionGranted) {
+      setNotice("Location permission is required to record trips.");
+      return;
     }
-  };
 
+    // Initialize GPS before creating the database record.
+    await activateGPS();
 
+    // Obtain the Firebase authentication token.
+    const token = await user.getIdToken();
+
+    const response = await fetch(
+      "http://localhost:3000/api/trips/start",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      deactivateGPS();
+
+      if (response.status === 409) {
+        setNotice(
+          "An unfinished trip already exists. Please end it before starting another."
+        );
+        setPage("active");
+        return;
+      }
+
+      setNotice(data.message || "Unable to start trip.");
+      return;
+    }
+
+    console.log("Trip created in PostgreSQL:", data.trip);
+
+    // Start the trip timer and open the active trip screen.
+    setSeconds(0);
+    setStarted(true);
+    setPage("active");
+
+  } catch (error) {
+    deactivateGPS();
+    console.error("Start Trip error:", error);
+    setNotice("Unable to start GPS tracking or connect to the backend.");
+
+  } finally {
+    tripRequestPending.current = false;
+  }
+};
 
 const endTrip = async () => {
   const user = auth.currentUser;
@@ -152,6 +232,13 @@ const endTrip = async () => {
     setNotice("Please log in to end your trip.");
     return;
   }
+
+  // Prevent multiple simultaneous End Trip requests.
+  if (tripRequestPending.current) {
+    return;
+  }
+
+  tripRequestPending.current = true;
 
   try {
     const token = await user.getIdToken();
@@ -162,8 +249,8 @@ const endTrip = async () => {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json"
-        }
+          "Content-Type": "application/json",
+        },
       }
     );
 
@@ -174,51 +261,77 @@ const endTrip = async () => {
       return;
     }
 
-    console.log("Trip completed in PostgreSQL:", data.trip);
+    // Stop GPS tracking after successful completion.
+    deactivateGPS();
 
+    // Retrieve the latest recorded GPS statistics.
+    const finalStats = gpsStatsRef.current;
+
+    // Stop the trip timer.
     setStarted(false);
 
     const date = new Date(data.trip.started_at);
     const endDate = new Date(data.trip.ended_at);
 
+    // Create a trip using actual GPS distance.
     const trip: Trip = {
       id: Number(data.trip.id),
+
       date: date.toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
-        year: "numeric"
+        year: "numeric",
       }),
+
       start: date.toLocaleTimeString("en-US", {
         hour: "numeric",
-        minute: "2-digit"
+        minute: "2-digit",
       }),
+
       end: endDate.toLocaleTimeString("en-US", {
         hour: "numeric",
-        minute: "2-digit"
+        minute: "2-digit",
       }),
+
       minutes: Math.floor(
         (endDate.getTime() - date.getTime()) / 60000
       ),
-      distance: 0,
+
+      // Actual distance calculated from GPS.
+      distance: Number(finalStats.distanceKm.toFixed(2)),
+
+      // Temporary values until scoring is implemented.
       score: 90,
       speeding: 0,
       braking: 0,
-      acceleration: 0
+      acceleration: 0,
     };
 
-
-setTrips(previous => [
-  trip,
-  ...previous.filter(existingTrip => existingTrip.id !== trip.id)
-]);
+    // Add the completed trip to the local trip history.
+    setTrips(previous => [
+      trip,
+      ...previous.filter(
+        existingTrip => existingTrip.id !== trip.id
+      ),
+    ]);
 
     setChosen(trip);
     setPage("history");
-    setNotice("Trip saved successfully. GPS tracking is not implemented yet.");
+
+    setNotice("Trip completed successfully.");
+
+    console.log("Completed trip GPS summary:", {
+      distanceKm: finalStats.distanceKm,
+      maxSpeedKmh: finalStats.maxSpeedKmh,
+      recordedPoints: finalStats.route.length,
+    });
 
   } catch (error) {
     console.error("End Trip error:", error);
     setNotice("Unable to connect to the backend.");
+
+  } finally {
+    tripRequestPending.current = false;
   }
 };
 
@@ -388,7 +501,89 @@ settings: ['Account Settings', 'Manage your account and get help'],
   />
 )}
 
-      {page === 'active' && <Section><View style={styles.note}><Text style={styles.noteTitle}>●  Recording demo trip</Text></View><View style={styles.timerBlock}><Text style={styles.muted}>Trip duration</Text><Text style={styles.timer}>{displayTime}</Text><Text style={styles.muted}>Hours : Minutes : Seconds</Text></View><Box><Heading>Live trip information</Heading><View style={styles.spaceBetween}><Text style={styles.muted}>Distance traveled</Text><Text>Not tracked</Text></View><View style={styles.rule} /><View style={styles.spaceBetween}><Text style={styles.muted}>GPS & motion sensors</Text><Text>Demo only</Text></View></Box><Text style={[styles.centered,styles.muted]}>Keep your phone secured while driving. End your trip only when safely parked.</Text><Button text="End Trip" onPress={endTrip} /><Text style={[styles.centered,styles.muted]}>Your demo trip will appear in Trip History.</Text></Section>}
+{page === 'active' && (
+  <Section>
+
+    <View style={styles.note}>
+      <Text style={styles.noteTitle}>
+        {started
+          ? "● Recording trip"
+          : "Unfinished trip"}
+      </Text>
+    </View>
+
+    {/* Trip duration */}
+    <View style={styles.timerBlock}>
+      <Text style={styles.muted}>Trip duration</Text>
+
+      <Text style={styles.timer}>{displayTime}</Text>
+
+      <Text style={styles.muted}>
+        Hours : Minutes : Seconds
+      </Text>
+    </View>
+
+    {/* Live GPS information */}
+    <Box>
+      <Heading>Live trip information</Heading>
+
+      <View style={styles.spaceBetween}>
+        <Text style={styles.muted}>Distance traveled</Text>
+        <Text>{gpsStats.distanceKm.toFixed(2)} km</Text>
+      </View>
+
+      <View style={styles.rule} />
+
+      <View style={styles.spaceBetween}>
+        <Text style={styles.muted}>Current speed</Text>
+        <Text>
+          {gpsStats.currentSpeedKmh === null
+            ? "Unavailable"
+            : `${gpsStats.currentSpeedKmh.toFixed(1)} km/h`}
+        </Text>
+      </View>
+
+      <View style={styles.rule} />
+
+      <View style={styles.spaceBetween}>
+        <Text style={styles.muted}>Maximum speed</Text>
+        <Text>{gpsStats.maxSpeedKmh.toFixed(1)} km/h</Text>
+      </View>
+
+      <View style={styles.rule} />
+
+      <View style={styles.spaceBetween}>
+        <Text style={styles.muted}>GPS status</Text>
+        <Text>
+          {!started
+            ? "Inactive"
+            : gpsStats.route.length > 0
+              ? "Connected"
+              : "Waiting for GPS..."}
+        </Text>
+      </View>
+
+      <View style={styles.rule} />
+
+      <View style={styles.spaceBetween}>
+        <Text style={styles.muted}>Motion sensors</Text>
+        <Text>Not enabled yet</Text>
+      </View>
+    </Box>
+
+    <Text style={[styles.centered, styles.muted]}>
+      Keep your phone secured while driving.
+      End your trip only when safely parked.
+    </Text>
+
+    <Button text="End Trip" onPress={endTrip} />
+
+    <Text style={[styles.centered, styles.muted]}>
+      Your completed trip will appear in Trip History.
+    </Text>
+
+  </Section>
+)}
       {page === 'history' && <Section><Pressable style={styles.selectRow} onPress={()=>setRange(r=>r==='Last 7 days'?'All trips':'Last 7 days')}><Text>{range}</Text><Text>⌄</Text></Pressable><View style={styles.summary}><View><Text style={styles.summaryNumber}>{trips.length}</Text><Text style={styles.muted}>Completed trips</Text></View><View><Text style={styles.summaryNumber}>{totalKm.toFixed(1)} km</Text><Text style={styles.muted}>Total distance</Text></View></View><View style={[styles.spaceBetween,{marginBottom:12}]}><Heading>{range === 'Last 7 days'?'Oct 27 – Nov 2, 2026':'All demo trips'}</Heading><Text style={styles.muted}>Score</Text></View>{trips.map(t=><TripRow key={t.id} trip={t} open={()=>openTrip(t)} />)}<Text style={[styles.muted,{marginTop:20}]}>Select a trip to review its driving events.</Text></Section>}
       {page === 'details' && <Section><Text onPress={()=>setPage('history')} style={styles.back}>‹ Back to Trip History</Text><Heading>{chosen.date}</Heading><View style={[styles.spaceBetween,{marginVertical:16}]}><View><Text style={styles.muted}>Start time</Text><Text style={styles.label}>{chosen.start}</Text></View><View><Text style={styles.muted}>End time</Text><Text style={styles.label}>{chosen.end}</Text></View></View><View style={[styles.summary,styles.spaceBetween]}><Text><Text style={styles.noteTitle}>{chosen.minutes} min</Text> duration</Text><Text><Text style={styles.noteTitle}>{chosen.distance.toFixed(1)} km</Text> distance</Text></View><Heading>Recorded route</Heading><View style={styles.mapPlaceholder}><Text style={styles.muted}>Map placeholder — no real GPS route</Text><Text style={{fontSize:28,marginTop:20}}>○ ────── ●</Text><Text style={styles.muted}>Start                       End</Text></View><Box><Heading>Trip driving score</Heading><Text style={styles.bigScore}>{chosen.score}<Text style={styles.scoreSuffix}> / 100</Text></Text><View style={styles.track}><View style={[styles.fill,{width:`${chosen.score}%` as `${number}%`}]} /></View></Box><View style={[styles.spaceBetween,{marginTop:24}]}><Heading>Driving events</Heading><Text style={styles.muted}>{chosen.speeding+chosen.braking+chosen.acceleration} total</Text></View><EventRow label="Speeding" count={chosen.speeding} /><EventRow label="Harsh braking" count={chosen.braking} /><EventRow label="Sudden acceleration" count={chosen.acceleration} /></Section>}
       {page === 'analytics' && <Section><Box><Heading>Driving score</Heading><Text style={styles.bigScore}>{score}<Text style={styles.scoreSuffix}> / 100</Text></Text><View style={styles.track}><View style={[styles.fill,{width:`${score}%` as `${number}%`}]} /></View><Text style={styles.muted}>{trips.length} trips · {totalKm.toFixed(1)} km · Demo data</Text></Box><View style={[styles.spaceBetween,{marginTop:25,marginBottom:8}]}><Heading>Driving events</Heading><Text style={styles.muted}>{events.speeding+events.braking+events.acceleration} total</Text></View><EventRow label="Speeding" sub="Above the road speed limit" count={events.speeding} /><EventRow label="Harsh braking" sub="Abrupt decreases in speed" count={events.braking} /><EventRow label="Sudden acceleration" sub="Rapid increases in speed" count={events.acceleration} /><View style={styles.note}><Text style={styles.noteTitle}>How your score is calculated</Text><Text style={styles.muted}>The full system will calculate scores from GPS and motion sensors. All values shown here are sample values.</Text></View></Section>}
